@@ -1,0 +1,38 @@
+# Requirements for VoiceSync (STT + MT + TTS)
+
+# Core scientific computing
+numpy
+scipy
+
+# Audio processing
+librosa
+soundfile
+webrtcvad
+noisereduce
+
+# Machine Learning/Deep Learning
+torch
+torchaudio
+transformers
+
+# Speech Recognition
+faster-whisper
+
+# Machine Translation
+nltk
+cachetools
+
+# Text-to-Speech
+coqui-tts
+
+# Voice Cloning and Neural Vocoders
+speechbrain
+
+# Web/API Framework
+fastapi
+uvicorn
+pydantic
+websockets
+
+# Security and Performance
+redis  # For distributed caching and rate limiting
