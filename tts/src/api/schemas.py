@@ -22,7 +22,7 @@ class VoiceSignature(BaseModel):
 
 
 class SynthesisRequest(BaseModel):
-    """Request model for TTS synthesis"""
+    """Request model for TTS synthesis with voice cloning support"""
     session_id: str = Field(..., description="Unique session identifier")
     call_id: str = Field(..., description="Call identifier")
     speaker_id: str = Field(..., description="Speaker identifier")
@@ -32,16 +32,16 @@ class SynthesisRequest(BaseModel):
     source_text: str = Field(..., description="Original source text")
     translated_text: str = Field(..., description="Translated text")
     tts_text: str = Field(..., description="Text to synthesize", max_length=5000)
-    ssml: str = Field("", description="SSML formatted text")
-    confidence: float = Field(0.0, ge=0.0, le=1.0, description="Confidence score")
-    target_word_timestamps: List[List[float]] = Field([], description="Word timestamps")
-    pause_hints: List[Dict[str, Any]] = Field([], description="Pause hints")
-    prosody_hints: Dict[str, Any] = Field({}, description="Prosody hints")
-    speaker_embedding: List[float] = Field([], description="Speaker embedding")
-    character_duration_map: Dict[str, float] = Field({}, description="Character duration map")
+    ssml: str = Field("", description="SSML formatted text for enhanced speech synthesis")
+    confidence: float = Field(0.0, ge=0.0, le=1.0, description="Translation confidence score")
+    target_word_timestamps: List[List[float]] = Field([], description="Word-level timestamps for prosody")
+    pause_hints: List[Dict[str, Any]] = Field([], description="Pause hints for natural speech")
+    prosody_hints: Dict[str, Any] = Field({}, description="Prosody hints for voice characteristics")
+    speaker_embedding: List[float] = Field([], description="256-dimensional speaker embedding for voice cloning")
+    character_duration_map: Dict[str, float] = Field({}, description="Character duration mapping")
     processing_time_ms: float = Field(0.0, description="Processing time in milliseconds")
     cache_hit: bool = Field(False, description="Whether result was from cache")
-    voice_signature: Optional[VoiceSignature] = Field(None, description="Voice signature")
+    voice_signature: Optional[VoiceSignature] = Field(None, description="Detailed voice signature with acoustic features")
     
     @validator('tts_text')
     def validate_text_length(cls, v):
@@ -60,7 +60,7 @@ class SynthesisRequest(BaseModel):
 class SynthesisResponse(BaseModel):
     """Response model for TTS synthesis"""
     session_id: str = Field(..., description="Unique session identifier")
-    audio_bytes: bytes = Field(..., description="Generated audio bytes")
+    audio_bytes: str = Field(..., description="Base64 encoded generated audio bytes")
     sample_rate: int = Field(..., description="Audio sample rate")
     duration_ms: float = Field(..., description="Audio duration in milliseconds")
     synthesis_time_ms: float = Field(..., description="Synthesis time in milliseconds")
@@ -71,7 +71,7 @@ class SynthesisResponse(BaseModel):
         schema_extra = {
             "example": {
                 "session_id": "sess_123456",
-                "audio_bytes": b"audio_data...",
+                "audio_bytes": "base64_encoded_audio_data...",
                 "sample_rate": 22050,
                 "duration_ms": 2500.5,
                 "synthesis_time_ms": 150.2,

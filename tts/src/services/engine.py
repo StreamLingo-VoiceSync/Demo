@@ -206,24 +206,41 @@ class TTSEngine:
             # Check if model supports voice cloning
             supports_vc = hasattr(model, 'is_multi_speaker') and model.is_multi_speaker
             
+            # Enhanced voice cloning logic
             if supports_vc and (reference_wav or speaker_wav or (embedding and len(embedding) > 0)):
+                log.info(f"Using voice cloning for {lang} synthesis | Reference: {bool(reference_wav)} | Speaker: {bool(speaker_wav)} | Embedding: {bool(embedding)}")
+                
                 # Use voice cloning capabilities
-                if reference_wav:
+                if reference_wav and os.path.exists(reference_wav):
                     # YourTTS-style voice cloning with reference audio
                     wav = model.tts(text=text, speaker_wav=reference_wav)
-                elif speaker_wav:
+                elif speaker_wav and os.path.exists(speaker_wav):
                     # Voice cloning with speaker audio
                     wav = model.tts(text=text, speaker_wav=speaker_wav)
                 elif embedding and len(embedding) > 0:
-                    # Voice cloning with embedding (convert to appropriate format)
+                    # Voice cloning with embedding
                     # For YourTTS, we need to convert embedding to speaker representation
-                    speaker_embedding = np.array(embedding, dtype=np.float32)
-                    wav = model.tts(text=text, speaker_embedding=speaker_embedding)
+                    try:
+                        # Ensure embedding is in the right format
+                        speaker_embedding = np.array(embedding, dtype=np.float32)
+                        
+                        # Normalize the embedding if needed
+                        norm = np.linalg.norm(speaker_embedding)
+                        if norm > 0:
+                            speaker_embedding = speaker_embedding / norm
+                        
+                        # Use the embedding for voice cloning
+                        wav = model.tts(text=text, speaker_embedding=speaker_embedding)
+                        log.debug(f"Voice cloning with embedding successful, length: {len(embedding)}")
+                    except Exception as embed_error:
+                        log.warning(f"Voice cloning with embedding failed: {embed_error}, falling back to standard synthesis")
+                        wav = model.tts(text=text)
                 else:
                     # Fallback to standard synthesis
                     wav = model.tts(text=text)
             else:
                 # Standard TTS synthesis
+                log.debug(f"Standard TTS synthesis for {lang}")
                 wav = model.tts(text=text)
             
             # Apply neural vocoder if available
@@ -252,7 +269,7 @@ class TTSEngine:
                     "duration_ms": duration_ms
                 }
             
-            log.debug(f"Synthesized {len(text)} chars in {lang} | Audio: {len(audio_bytes)} bytes | Time: {total_time:.1f}ms | Cache: {cache_hit}")
+            log.debug(f"Synthesized {len(text)} chars in {lang} | Audio: {len(audio_bytes)} bytes | Time: {total_time:.1f}ms | Cache: {cache_hit} | VC: {bool(reference_wav or speaker_wav or (embedding and len(embedding) > 0))}")
             
             return audio_bytes, sample_rate, duration_ms, total_time, cache_hit
             

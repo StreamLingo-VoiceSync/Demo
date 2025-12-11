@@ -1,8 +1,6 @@
 """
 REAL-TIME STT SYSTEM - LATENCY OPTIMIZED (<2s)
 
-================================================================
-
 Multi-language support: EN, HI, ES, FR
 MT/TTS-ready output with word-level timestamps, prosody, and embeddings
 
@@ -15,9 +13,7 @@ import numpy as np
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple, List, Callable
 
-# ============================================================================ 
-# CONFIGURATION - OPTIMIZED FOR <2s LATENCY
-# ============================================================================
+# Configuration - Optimized for <2s latency
 
 # Audio Settings
 SAMPLE_RATE = 16000

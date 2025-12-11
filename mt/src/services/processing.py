@@ -279,52 +279,55 @@ class TTSPreparator:
     def __init__(self):
         self.punctuation_restorer = {}
     
-    def prepare_tts_output(self,
-                         translation_result: Dict[str, Any],
-                         source_tokens: List[ProcessedToken],
-                         target_tokens: List[str],
-                         alignments: Dict[int, List[int]],
-                         call_id: str,
-                         speaker_id: str,
-                         target_language: str,
-                         processing_path: str) -> TranslationResult:
-        """Prepare TTS-ready output with timestamps and SSML"""
+    def prepare_for_tts(self,
+                       translation_result: TranslationResult,
+                       source_tokens: List[ProcessedToken],
+                       target_tokens: List[str],
+                       alignments: Dict[int, List[int]],
+                       speaker_embedding: Optional[List[float]] = None) -> TranslationResult:
+        """Prepare translation result for TTS with voice cloning support"""
         
-        target_word_timestamps = self._generate_timestamps(
-            source_tokens, target_tokens, alignments
-        )
+        call_id = translation_result.call_id
+        speaker_id = translation_result.speaker_id
+        source_lang = translation_result.source_language
+        target_lang = translation_result.target_language
+        translated_text = translation_result.translated_text
+        processing_path = translation_result.processing_path
         
-        source_lang = translation_result.get("source_lang", "eng_Latn")
-        target_lang = translation_result.get("target_lang", target_language)
-        translated_text = translation_result.get("translated_text", "")
+        log.debug(f"[{call_id}] Preparing TTS data for {speaker_id} in {target_lang}")
         
-        tts_text = translated_text
+        # Generate target word timestamps for TTS prosody
+        target_word_timestamps = self._generate_timestamps(source_tokens, target_tokens, alignments)
+        
+        # Generate pause hints based on source timing
         pause_hints = self._generate_pause_hints(source_tokens, alignments)
-        ssml = self._generate_ssml(tts_text, pause_hints, target_lang)
         
-        # FIX: Initialize punctuation restorer if not present
+        # Generate SSML markup
+        ssml = self._generate_ssml(translated_text, pause_hints, target_lang)
+        
+        # Restore punctuation for better TTS
         if target_lang not in self.punctuation_restorer:
             self.punctuation_restorer[target_lang] = PunctuationRestorer(target_lang)
         
         restorer = self.punctuation_restorer[target_lang]
-        tts_text = restorer.restore_punctuation(tts_text, source_tokens)
+        tts_text = restorer.restore_punctuation(translated_text, source_tokens)
         
+        # Generate prosody hints
         prosody_hints = {
             "tone_pattern": "neutral",
             "speech_rate": "normal",
             "speaker_context": True,
         }
         
-        # FIX #1: Use keyword arguments to avoid positional arg confusion
-        # FIX #2: Remove bleu_score - TranslationResult dataclass doesn't need it
+        # Prepare the final result with voice cloning support
         result = TranslationResult(
-            session_id=f"session_{uuid.uuid4().hex[:8]}",
+            session_id=translation_result.session_id,
             call_id=call_id,
             speaker_id=speaker_id,
-            segment_id="",  # FIX: Now using keyword argument
+            segment_id=translation_result.segment_id,
             source_language=source_lang,
             target_language=target_lang,
-            source_text=translation_result.get("source_text", ""),
+            source_text=translation_result.source_text,
             translated_text=translated_text,
             tts_text=tts_text,
             processing_path=processing_path,
@@ -332,16 +335,17 @@ class TTSPreparator:
             target_words=target_tokens,
             word_alignment=alignments,
             target_word_timestamps=target_word_timestamps,
-            confidence=translation_result.get("confidence", translation_result.get("mt_confidence", 0.0)),
+            confidence=translation_result.confidence,
             ssml=ssml,
             pause_hints=pause_hints,
             prosody_hints=prosody_hints,
-            processing_time_ms=translation_result.get("processing_time_ms", 0),
-            cache_hit=translation_result.get("from_cache", False),
+            processing_time_ms=translation_result.processing_time_ms,
+            cache_hit=translation_result.cache_hit,
+            # Add speaker embedding for voice cloning
+            speaker_embedding=speaker_embedding if speaker_embedding else []
         )
         return result
 
-    
     def _generate_timestamps(self,
                             source_tokens: List[ProcessedToken],
                             target_tokens: List[str],

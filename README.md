@@ -110,7 +110,9 @@ For phrases not in the dictionary, the system will prefix the text with "[Langua
 - **STT Service**: `ws://localhost:8765` (WebSocket)
 - **MT Service**: `http://localhost:8766/translate` (HTTP POST)
 - **TTS Service**: `http://localhost:8767/synthesize` (HTTP POST)
-- **WebSocket Integration**: `ws://localhost:8000` (WebSocket)## Checking Running Processes
+- **WebSocket Integration**: `ws://localhost:8000` (WebSocket)
+
+## Checking Running Processes
 
 To verify that all components are running correctly:
 
@@ -126,7 +128,9 @@ pgrep -af "node.*start"
 
 # Check specific ports
 ss -tulnp | grep -E ":(8765|8766|8767|8000|3000|3001)"
-```## Troubleshooting
+```
+
+## Troubleshooting
 
 ### WebSocket Connection Issues
 
@@ -155,6 +159,8 @@ sudo lsof -i :8767 | grep LISTEN | awk '{print $2}' | xargs kill -9
 sudo lsof -i :8000 | grep LISTEN | awk '{print $2}' | xargs kill -9
 sudo lsof -i :3000 | grep LISTEN | awk '{print $2}' | xargs kill -9
 sudo lsof -i :3001 | grep LISTEN | awk '{print $2}' | xargs kill -9
+```
+
 ### Frontend Not Loading
 
 If the React application fails to start:
@@ -179,9 +185,9 @@ If the React application fails to start:
 ```
 
 The WebSocket server orchestrates communication between clients and the individual services:
-1. **Speech-to-Text (STT)**: Converts voice input to text
-2. **Machine Translation (MT)**: Translates text between languages
-3. **Text-to-Speech (TTS)**: Converts translated text back to voice
+1. **Speech-to-Text (STT)**: Converts voice input to text and extracts speaker embeddings
+2. **Machine Translation (MT)**: Translates text between languages while preserving speaker information
+3. **Text-to-Speech (TTS)**: Converts translated text back to voice using voice cloning
 
 ## Demo Version
 
@@ -206,4 +212,4 @@ cd /home/azureuser/VoiceSync
 
 ## License
 
-This is a demonstration project for educational purposes.
+This is a demonstration project for KT purposes.

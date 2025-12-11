@@ -3,16 +3,16 @@
 from __future__ import annotations
 import pathlib
 
-# ========== LOGGING ==========
+# Logging
 # from common.logger import setup_mt_logger
 # log = setup_mt_logger()
 
-# ========== OUTPUT DIRECTORIES ==========
+# Output directories
 MT_OUTPUT_DIR = pathlib.Path("./mt_output")
 for d in ["tts_ready", "grammar_analysis", "alignment_analysis", "metrics", "logs", "dual_lane"]:
     (MT_OUTPUT_DIR / d).mkdir(parents=True, exist_ok=True)
 
-# ========== LANGUAGE CONFIGURATION ==========
+# Language configuration
 LANGUAGE_CODES = {
     "en": "eng_Latn", "eng": "eng_Latn", "english": "eng_Latn",
     "hi": "hin_Deva", "hin": "hin_Deva", "hindi": "hin_Deva",
@@ -27,7 +27,7 @@ LANGUAGE_NAMES = {
     "fra_Latn": "French",
 }
 
-# ========== ADVANCED IDIOM DATABASE (50+ idioms per language) ==========
+# Advanced idiom database (50+ idioms per language)
 IDIOM_DATABASE = {
     "eng_Latn": {
         "break a leg": ("good luck", "idiom", "theater"),
@@ -116,7 +116,7 @@ IDIOM_DATABASE = {
     }
 }
 
-# ========== HOMOPHONES DATABASE ==========
+# Homophones database
 HOMOPHONES_DB = {
     "eng_Latn": {
         "to": ["too", "two"],
@@ -147,7 +147,7 @@ HOMOPHONES_DB = {
     }
 }
 
-# ========== SYNONYMS DATABASE ==========
+# Synonyms database
 SYNONYMS_DB = {
     "eng_Latn": {
         "happy": ["joyful", "glad", "cheerful", "content"],
@@ -181,7 +181,7 @@ SYNONYMS_DB = {
     }
 }
 
-# ========== GRAMMAR RULES ==========
+# Grammar rules
 GRAMMAR_RULES = {
     "eng_Latn": {
         "subject_verb_agreement": True,
@@ -195,10 +195,20 @@ GRAMMAR_RULES = {
     },
 }
 
-# ========== PUNCTUATION RULES ==========
+# Punctuation rules
 PUNCTUATION_RULES = {
     "eng_Latn": {"sentence_end": ".", "question": "?", "exclamation": "!"},
     "hin_Deva": {"sentence_end": "।", "question": "?", "exclamation": "!"},
-    "spa_Latn": {"sentence_end": ".", "question": "?", "inv_question": "¿"},
-    "fra_Latn": {"sentence_end": ".", "question": "?", "semicolon": ";"},
+    "spa_Latn": {"sentence_end": ".", "question": "?", "exclamation": "!"},
+    "fra_Latn": {"sentence_end": ".", "question": "?", "exclamation": "!"},
+}
+
+# Context window size for dual-lane processing
+CONTEXT_WINDOW_SIZE = 5
+
+# Confidence thresholds
+CONFIDENCE_THRESHOLDS = {
+    "high": 0.85,
+    "medium": 0.70,
+    "low": 0.50
 }

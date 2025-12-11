@@ -44,14 +44,14 @@ from .utils.helpers import ASRTokenProcessor
 from common.logger import setup_mt_logger
 log = setup_mt_logger()
 
-# ========== DUAL-LANE ORCHESTRATOR ==========
+# Dual-Lane Orchestrator
 
 class DualLaneOrchestrator:
-    """Main coordinator for concurrent dual-lane translation"""
+    """Dual-lane MT orchestrator with concurrent processing"""
     
-    def __init__(self,
+    def __init__(self, 
                  model_name: str = "facebook/nllb-200-1.3B",
-                 device: Optional[str] = None,
+                 device: str = "cpu",
                  max_workers: int = 2):
         
         log.info("Initializing Dual-Lane MT Pipeline v9.0 - ULTIMATE TOP-TIER")
@@ -88,7 +88,9 @@ class DualLaneOrchestrator:
                                       target_lang_B: str,
                                       call_id: str,
                                       asr_tokens_A: Optional[List[Dict[str, Any]]] = None,
-                                      asr_tokens_B: Optional[List[Dict[str, Any]]] = None) -> Dict[str, TranslationResult]:
+                                      asr_tokens_B: Optional[List[Dict[str, Any]]] = None,
+                                      speaker_embedding_A: Optional[List[float]] = None,
+                                      speaker_embedding_B: Optional[List[float]] = None) -> Dict[str, TranslationResult]:
         """
         Process both paths CONCURRENTLY:
         - Path 1: Speaker A (text_A) -> translate to target_lang_A
@@ -106,13 +108,13 @@ class DualLaneOrchestrator:
             future_path_1 = self.executor.submit(
                 self._translate_single_path,
                 text_A, source_lang_A, target_lang_A,
-                call_id, "speaker_A", asr_tokens_A, "path_1"
+                call_id, "speaker_A", asr_tokens_A, "path_1", speaker_embedding_A
             )
             
             future_path_2 = self.executor.submit(
                 self._translate_single_path,
                 text_B, source_lang_B, target_lang_B,
-                call_id, "speaker_B", asr_tokens_B, "path_2"
+                call_id, "speaker_B", asr_tokens_B, "path_2", speaker_embedding_B
             )
             
             # Wait for both to complete
@@ -155,8 +157,9 @@ class DualLaneOrchestrator:
                               call_id: str,
                               speaker_id: str,
                               asr_tokens: Optional[List[Dict[str, Any]]],
-                              processing_path: str) -> TranslationResult:
-        """Process single translation path"""
+                              processing_path: str,
+                              speaker_embedding: Optional[List[float]] = None) -> TranslationResult:
+        """Process single translation path with voice cloning support"""
         
         t0 = time.time()
         
@@ -198,142 +201,107 @@ class DualLaneOrchestrator:
             
             # Get speaker context for homophone resolution
             speaker_context = self.context_manager.get_context(speaker_id)
-            context_text = " ".join([c["translation"] for c in speaker_context])
             
-            # Resolve homophones
-            homophone_resolved = self.homophone_resolver.resolve_homophones(
-                idiom_processed_text, source_lang, context_text
+            # Dual-lane routing
+            routed_source_lang = self.path_router.route_language(source_lang, target_lang, processing_path)
+            
+            # Translation with context awareness
+            translation_result = self.translation_engine.translate_with_context(
+                idiom_processed_text,
+                routed_source_lang,
+                target_lang,
+                speaker_context,
+                speaker_id
             )
             
-            # Translation
-            translation_result = self.translation_engine.translate(
-                homophone_resolved,
-                source_lang,
-                target_lang
-            )
-            
-            translation_result["source_text"] = text
+            # Post-processing
+            translated_text = translation_result.get("translated_text", "")
             
             # Grammar analysis
-            grammar_valid, grammar_issues = self.grammar_analyzer.analyze_grammar(
-                translation_result.get("translated_text", ""), target_lang
+            grammar_issues = self.grammar_analyzer.analyze_grammar(
+                translated_text, target_lang, speaker_id
             )
-            translation_result["grammar_valid"] = grammar_valid
-            translation_result["grammar_issues"] = grammar_issues
             
-            # Alignment
-            target_tokens = translation_result["translated_text"].split()
-            source_token_texts = [t.text for t in processed_tokens]
+            # Homophone resolution
+            resolved_text = self.homophone_resolver.resolve_homophones(
+                translated_text, target_lang, speaker_id
+            )
             
+            # Synonym selection
+            synonym_text = self.synonym_selector.select_appropriate_synonyms(
+                resolved_text, target_lang, speaker_id
+            )
+            
+            # Idiom restoration
+            final_text = self.idiom_handler.restore_idioms(
+                synonym_text, detected_idioms, target_lang
+            )
+            
+            # Update translation result
+            translation_result["translated_text"] = final_text
+            
+            # Word alignment extraction
+            target_words = final_text.split()
             alignments = self.alignment_extractor.extract_alignments(
-                source_token_texts,
-                target_tokens
+                processed_tokens, target_words
             )
             
             # Confidence fusion
-            asr_confs = [t.confidence for t in processed_tokens]
             fused_confidence = self.confidence_fusion.fuse_confidences(
-                translation_result["mt_confidence"],
-                asr_confs,
-                alignments
-            )
-            translation_result["confidence"] = fused_confidence
-            
-            # TTS preparation
-            tts_result = self.tts_preparator.prepare_tts_output(
-                translation_result,
-                processed_tokens,
-                target_tokens,
-                alignments,
-                call_id,
-                speaker_id,
-                target_lang,
-                processing_path
+                translation_result.get("confidence", 0.8),
+                grammar_issues
             )
             
-            tts_result.processing_time_ms = (time.time() - t0) * 1000
-            
-            # Record performance
-            self.performance_manager.record_performance(
-                processing_path,
-                tts_result.processing_time_ms,
-                tts_result.confidence,
-                translation_result.get("from_cache", False)
+            # Prepare for TTS
+            tts_result = self.tts_preparator.prepare_for_tts(
+                translation_result, processed_tokens, target_words, alignments, speaker_embedding
             )
             
-            # Save output
-            self._save_translation_output(tts_result)
+            # Create TranslationResult
+            result = TranslationResult(
+                source_text=text,
+                translated_text=final_text,
+                source_language=source_lang,
+                target_language=target_lang,
+                confidence=fused_confidence,
+                processing_time_ms=(time.time() - t0) * 1000,
+                call_id=call_id,
+                speaker_id=speaker_id,
+                tts_text=tts_result.tts_text,
+                tts_timing=tts_result.tts_timing,
+                word_alignments=tts_result.word_alignments,
+                speaker_embedding=speaker_embedding
+            )
             
-            log.info(f"[{call_id}] {processing_path} SUCCESS | Conf: {fused_confidence:.3f} | Time: {tts_result.processing_time_ms:.0f}ms")
+            log.debug(f"[{call_id}] {processing_path} processing complete | Time: {(time.time() - t0) * 1000:.0f}ms")
+            return result
             
-            return tts_result
-        
         except Exception as e:
-            error_result = self.error_recovery.handle_path_error(e, processing_path, call_id, speaker_id)
-            log.error(f"[{call_id}] {processing_path} Error: {error_result['error_message']}")
-        
-            # Return minimal error response
+            log.error(f"[{call_id}] {processing_path} error: {e}")
+            import traceback
+            log.debug(traceback.format_exc())
+            
+            # Return error result
             return TranslationResult(
-            session_id=f"session_error_{uuid.uuid4().hex[:8]}",
-            call_id=call_id,
-            speaker_id=speaker_id,
-            segment_id="",
-            source_language=source_lang,
-            target_language=target_lang,
-            source_text=text,
-            translated_text="[Error in translation]",
-            tts_text="[Error in translation]",
-            processing_path=processing_path,
-            confidence=0.0,
-            path_errors=[str(e)]
+                source_text=text,
+                translated_text=f"[ERROR] {str(e)}",
+                source_language=source_lang,
+                target_language=target_lang,
+                confidence=0.0,
+                processing_time_ms=(time.time() - t0) * 1000,
+                call_id=call_id,
+                speaker_id=speaker_id,
+                tts_text=f"[ERROR] {str(e)}",
+                tts_timing=[],
+                word_alignments={},
+                speaker_embedding=speaker_embedding
             )
-
-    def _normalize_lang(self, code: str) -> str:
-        code = code.strip().lower()
-        # convert user-friendly codes → NLLB codes
-        return LANGUAGE_CODES.get(code, code)
-
-
-    def _save_translation_output(self, result: TranslationResult):
-        """Save translation outputs"""
-        
-        timestamp = time.strftime("%Y%m%d_%H%M%S")
-        
-        tts_data = {
-            "session_id": result.session_id,
-            "call_id": result.call_id,
-            "speaker_id": result.speaker_id,
-            "processing_path": result.processing_path,
-            "source_language": result.source_language,
-            "target_language": result.target_language,
-            "source_text": result.source_text,
-            "translated_text": result.translated_text,
-            "tts_text": result.tts_text,
-            "ssml": result.ssml,
-            "confidence": result.confidence,
-            "target_word_timestamps": result.target_word_timestamps,
-            "pause_hints": result.pause_hints,
-            "prosody_hints": result.prosody_hints,
-            "processing_time_ms": result.processing_time_ms,
-            "cache_hit": result.cache_hit,
-        }
-        
-        output_file = MT_OUTPUT_DIR / "dual_lane" / f"{timestamp}_{result.call_id}_{result.processing_path}.json"
-        with open(output_file, "w", encoding="utf-8") as f:
-            json.dump(tts_data, f, indent=2, ensure_ascii=False)
-        
-        log.debug(f"Saved output to {output_file}")
     
-    def get_performance_stats(self, path: str) -> Dict[str, Any]:
-        """Get performance statistics"""
-        return self.performance_manager.get_statistics(path)
-    
-    def clear_session(self, call_id: str):
-        """Clear session context"""
-        self.context_manager.clear_context(call_id)
-        log.info(f"Session {call_id} cleared")
+    def _normalize_lang(self, lang: str) -> str:
+        """Normalize language code to NLLB format"""
+        return LANGUAGE_CODES.get(lang.lower(), lang)
 
-# ========== INTERACTIVE DEMO ==========
+# Interactive Demo
 
 def interactive_dual_lane_demo():
     """Interactive demo for dual-lane MT"""
@@ -448,7 +416,7 @@ def interactive_dual_lane_demo():
             result_B = results.get("path_2")
             
             if result_A and isinstance(result_A, TranslationResult):
-                log.info(f"[PATH 1 - Speaker A]")
+                log.info(f"PATH 1 - Speaker A")
                 log.info(f"Source: {result_A.source_text}")
                 log.info(f"Target: {result_A.translated_text}")
                 log.info(f"TTS Text: {result_A.tts_text}")
@@ -456,7 +424,7 @@ def interactive_dual_lane_demo():
                 log.info(f"Latency: {result_A.processing_time_ms:.0f}ms")
             
             if result_B and isinstance(result_B, TranslationResult):
-                log.info(f"[PATH 2 - Speaker B]")
+                log.info(f"PATH 2 - Speaker B")
                 log.info(f"Source: {result_B.source_text}")
                 log.info(f"Target: {result_B.translated_text}")
                 log.info(f"TTS Text: {result_B.tts_text}")

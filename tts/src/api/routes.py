@@ -55,7 +55,16 @@ def rate_limit(dependency: str = ""):
     def decorator(func):
         @wraps(func)
         async def wrapper(request: Request, *args, **kwargs):
-            client_ip = request.client.host
+            # Fix: Properly handle both Request and other object types
+            if isinstance(request, Request) and hasattr(request, 'client') and request.client:
+                client_ip = request.client.host
+            elif isinstance(request, Request):
+                # Extract client IP from headers or use default
+                client_ip = request.headers.get("x-forwarded-for", "127.0.0.1").split(",")[0].strip()
+            else:
+                # For non-Request objects, use a default identifier
+                client_ip = "127.0.0.1"
+            
             current_time = time.time()
             
             # Clean up old entries
@@ -127,15 +136,14 @@ async def synthesize(request: SynthesisRequest, api_key: str = Security(get_api_
         reference_wav = None
         speaker_wav = None
         
+        # Priority: voice_signature > speaker_embedding > reference paths
         if request.voice_signature:
             voice_embedding = request.voice_signature.embedding
-        elif request.speaker_embedding:
+        elif request.speaker_embedding and len(request.speaker_embedding) > 0:
             voice_embedding = request.speaker_embedding
-        
-        # Check for reference audio paths in prosody hints or other fields
-        if hasattr(request, 'reference_audio_path'):
+        elif hasattr(request, 'reference_audio_path'):
             reference_wav = request.reference_audio_path
-        if hasattr(request, 'speaker_audio_path'):
+        elif hasattr(request, 'speaker_audio_path'):
             speaker_wav = request.speaker_audio_path
         
         # Synthesize audio with voice cloning capabilities
@@ -178,9 +186,13 @@ async def synthesize(request: SynthesisRequest, api_key: str = Security(get_api_
             )
             output_manager.save_metadata(request.session_id, metadata)
         
+        # Encode audio bytes as base64 for JSON serialization
+        import base64
+        audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
+        
         response = SynthesisResponse(
             session_id=request.session_id,
-            audio_bytes=audio_bytes,
+            audio_bytes=audio_base64,  # Return base64 encoded audio
             sample_rate=sample_rate,
             duration_ms=duration_ms,
             synthesis_time_ms=synthesis_time,
@@ -188,7 +200,7 @@ async def synthesize(request: SynthesisRequest, api_key: str = Security(get_api_
             speaker_id=request.speaker_id
         )
         
-        log.info(f"Synthesis completed for {request.speaker_id} in {request.target_language} | Duration: {duration_ms:.0f}ms | Time: {synthesis_time:.0f}ms | Cache: {cache_hit}")
+        log.info(f"Synthesis completed for {request.speaker_id} in {request.target_language} | Duration: {duration_ms:.0f}ms | Time: {synthesis_time:.0f}ms | Cache: {cache_hit} | Voice Cloning: {bool(voice_embedding)}")
         
         return response
         

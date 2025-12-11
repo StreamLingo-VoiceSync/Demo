@@ -3,16 +3,16 @@
 from __future__ import annotations
 import pathlib
 
-# ========== LOGGING ==========
+# Logging
 from common.logger import setup_tts_logger
 log = setup_tts_logger()
 
-# ========== OUTPUT DIRECTORIES ==========
+# Output directories
 TTS_OUTPUT_DIR = pathlib.Path("./tts_output")
 for d in ["audio", "logs", "models"]:
     (TTS_OUTPUT_DIR / d).mkdir(parents=True, exist_ok=True)
 
-# ========== LANGUAGE CONFIGURATION ==========
+# Language configuration
 SUPPORTED_LANGUAGES = {
     "en": "English",
     "hi": "Hindi", 
@@ -20,7 +20,7 @@ SUPPORTED_LANGUAGES = {
     "fr": "French"
 }
 
-# ========== MODEL CONFIGURATION ==========
+# Model configuration
 # Voice cloning enabled models with neural vocoders
 MODEL_CONFIG = {
     "en": {
@@ -53,7 +53,7 @@ MODEL_CONFIG = {
     }
 }
 
-# ========== VOICE CLONING METHODS ==========
+# Voice cloning methods
 VOICE_CLONING_METHODS = {
     "your_tts": {
         "description": "Zero-shot voice cloning with YourTTS",
@@ -72,7 +72,7 @@ VOICE_CLONING_METHODS = {
     }
 }
 
-# ========== NEURAL VOCODERS ==========
+# Neural vocoders
 NEURAL_VOCODERS = {
     "hifigan": {
         "description": "HiFi-GAN neural vocoder",
@@ -91,7 +91,7 @@ NEURAL_VOCODERS = {
     }
 }
 
-# ========== DEFAULT SETTINGS ==========
+# Default settings
 DEFAULT_SAMPLE_RATE = 22050
 DEFAULT_VC_METHOD = "your_tts"
 DEFAULT_VOCODER = "hifigan"

@@ -35,9 +35,7 @@ from ..core.exceptions import VADError, AudioProcessingError
 
 log = setup_stt_logger()
 
-# ============================================================================ 
-# PROSODY & EMBEDDINGS EXTRACTION
-# ============================================================================
+# Prosody & Embeddings Extraction
 
 def extract_prosody_features(audio: np.ndarray, sr: int = SAMPLE_RATE) -> Dict[str, float]:
     """Extract prosody features for TTS synthesis"""
@@ -163,9 +161,7 @@ class SpeakerEmbeddingExtractor:
         
         return embedding.tolist()
 
-# ============================================================================ 
-# VOICE ACTIVITY DETECTION
-# ============================================================================
+# Voice Activity Detection
 
 class VAD:
     def __init__(self, language: str = "en"):
@@ -187,7 +183,7 @@ class VAD:
                 log.info(f"WebRTC VAD initialized for {language.upper()} (mode={self.aggressiveness})")
             except Exception as e:
                 log.warning(f"WebRTC VAD init failed: {e}")
-    
+
     def is_speech(self, audio: np.ndarray) -> Tuple[bool, float]:
         a = safe_float_conversion(audio)
         if a.size == 0:
@@ -209,9 +205,7 @@ class VAD:
         decision = is_speech_rms or webrtc_decision
         return decision, rms_score
 
-# ============================================================================ 
-# AUDIO ENHANCEMENT
-# ============================================================================
+# Audio Enhancement
 
 class AudioEnhancer:
     def __init__(self, target_rms: float = 0.1):
@@ -258,9 +252,7 @@ class AudioEnhancer:
         stats["enhanced_rms"] = compute_rms(a)
         return a.astype(np.float32), stats
 
-# ============================================================================ 
-# SEGMENTER - CRITICAL FOR <2s LATENCY
-# ============================================================================
+# Segmenter - Critical for <2s latency
 
 class Segmenter:
     """Segments audio into processable chunks with aggressive finalization"""

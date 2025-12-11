@@ -39,9 +39,7 @@ from .utils.helpers import resample_if_needed, safe_float_conversion, compute_rm
 
 log = setup_stt_logger()
 
-# ============================================================================ 
-# OUTPUT MANAGER - MT/TTS READY
-# ============================================================================
+# Output Manager - MT/TTS Ready
 
 class OutputManager:
     """Saves outputs in MT/TTS-ready format"""
@@ -112,9 +110,7 @@ class OutputManager:
         except Exception as e:
             log.exception(f"Output save error: {e}")
 
-# ============================================================================ 
-# PARTICIPANT PIPELINE - WITH GATEWAY REFERENCE (FIX #2, #3)
-# ============================================================================
+# Participant Pipeline - With Gateway Reference (Fix #2, #3)
 
 class ParticipantPipeline:
     """Pipeline for single participant in call"""
@@ -244,9 +240,15 @@ class ParticipantPipeline:
                     log.error(f"Segment {asr_result.segment_id} not found!")
                     return
                 
+                # Save outputs including speaker embeddings
                 self.output_mgr.save_outputs(segment, asr_result)
+                
+                # Extract speaker embedding for voice cloning
+                speaker_embedding = self.output_mgr.embedding_extractor.extract(
+                    segment.audio, SAMPLE_RATE, asr_result.speaker_id
+                )
             
-            # FIX #6: Send transcript back to client over websocket
+            # FIX #6: Send transcript back to client over websocket with speaker embedding
             try:
                 if self.gateway:
                     ws = self.gateway.client_websockets.get(self.participant.client_id)
@@ -260,7 +262,8 @@ class ParticipantPipeline:
                             "language": asr_result.language,
                             "timestamp": asr_result.timestamp,
                             "processing_time": float(asr_result.processing_time),
-                            "words": asr_result.words
+                            "words": asr_result.words,
+                            "speaker_embedding": speaker_embedding  # Add speaker embedding for voice cloning
                         }
                         
                         asyncio.run_coroutine_threadsafe(
@@ -268,16 +271,14 @@ class ParticipantPipeline:
                             self.gateway.server_loop
                         )
                         
-                        log.info(f"📤 Sent to {asr_result.speaker_id}: {asr_result.text[:50]}...")
+                        log.info(f"Sent to {asr_result.speaker_id}: {asr_result.text[:50]}... | Embedding: {len(speaker_embedding)} dims")
             except Exception as send_err:
                 log.warning(f"Failed to send transcript: {send_err}")
         
         except Exception as e:
             log.exception(f"ASR callback error: {e}")
 
-# ============================================================================ 
-# EDGE GATEWAY - WITH WEBSOCKET DICT AND LOOP (FIX #1, #4, #5, #9)
-# ============================================================================
+# Edge Gateway - With WebSocket Dict and Loop (Fix #1, #4, #5, #9)
 
 class EdgeGateway:
     """Manages calls and participants"""
@@ -301,7 +302,7 @@ class EdgeGateway:
         pipeline.start()
         self.pipelines[(call_id, initiator.client_id)] = pipeline
         
-        log.info(f"📞 Call created: {call_id} by {initiator.client_id} ({initiator.language.upper()})")
+        log.info(f"Call created: {call_id} by {initiator.client_id} ({initiator.language.upper()})")
         return call_id
     
     def join_call(self, call_id: str, participant: CallParticipant) -> bool:
@@ -316,7 +317,7 @@ class EdgeGateway:
         pipeline.start()
         self.pipelines[(call_id, participant.client_id)] = pipeline
         
-        log.info(f"👥 Participant joined: {participant.client_id} ({participant.language.upper()}) → {call_id}")
+        log.info(f"Participant joined: {participant.client_id} ({participant.language.upper()}) → {call_id}")
         return True
     
     def leave_call(self, client_id: str):
@@ -354,9 +355,7 @@ class EdgeGateway:
         self.asr_manager.stop()
         log.info("Edge Gateway stopped")
 
-# ============================================================================ 
-# MAIN SERVER ENTRYPOINT - WITH EVENT LOOP (FIX #10)
-# ============================================================================
+# Main Server Entrypoint - With Event Loop (Fix #10)
 
 async def main():
     try:
@@ -377,9 +376,7 @@ async def main():
     
     server = await websockets.serve(handler, "0.0.0.0", 8765)
     
-    log.info("=" * 90)
     log.info("Production STT System - Optimized for <2s Latency")
-    log.info("=" * 90)
     log.info("WebSocket: ws://0.0.0.0:8765")
     log.info("Outputs: ./stt_outputs/")
     log.info("")
@@ -390,7 +387,6 @@ async def main():
     log.info("Multi-language: EN, HI, ES, FR")
     log.info("4-worker parallel ASR pipeline")
     log.info("REAL-TIME TRANSCRIPT RELAY TO CLIENTS (WEBSOCKET)")
-    log.info("=" * 90)
     
     try:
         await server.wait_closed()
@@ -399,10 +395,10 @@ async def main():
 
 if __name__ == "__main__":
     if sys.version_info < (3, 7):
-        print("Require Python 3.7+")
+        log.error("Require Python 3.7+")
         sys.exit(1)
     
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("Server stopped.")
+        log.info("Server stopped.")

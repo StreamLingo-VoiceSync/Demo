@@ -4,7 +4,7 @@ import sys
 import os
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import uvicorn
 
 # Add project root to path
@@ -25,6 +25,7 @@ class TranslationRequest(BaseModel):
     text: str
     source_lang: str
     target_lang: str
+    speaker_embedding: Optional[List[float]] = None  # Add speaker embedding for voice cloning
 
 class DualTranslationRequest(BaseModel):
     text_A: str
@@ -33,6 +34,8 @@ class DualTranslationRequest(BaseModel):
     source_lang_B: str
     target_lang_A: str
     target_lang_B: str
+    speaker_embedding_A: Optional[List[float]] = None  # Add speaker embedding for voice cloning
+    speaker_embedding_B: Optional[List[float]] = None  # Add speaker embedding for voice cloning
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application"""
@@ -60,7 +63,7 @@ def create_app() -> FastAPI:
     
     @app.post("/translate")
     async def translate_text(request: TranslationRequest):
-        """Translate text from source language to target language"""
+        """Translate text from source language to target language with voice cloning support"""
         try:
             # For single translation, we'll use the dual-lane with both texts being the same
             # and both target languages being the same
@@ -71,7 +74,9 @@ def create_app() -> FastAPI:
                 source_lang_B=request.source_lang,
                 target_lang_A=request.target_lang,
                 target_lang_B=request.target_lang,
-                call_id="single_translation"
+                call_id="single_translation",
+                speaker_embedding_A=request.speaker_embedding,  # Pass speaker embedding
+                speaker_embedding_B=request.speaker_embedding   # Pass speaker embedding
             )
             
             # Extract the translation result
@@ -79,22 +84,24 @@ def create_app() -> FastAPI:
             if path_1_result and hasattr(path_1_result, 'translated_text'):
                 return {
                     "translated_text": path_1_result.translated_text,
-                    "confidence": path_1_result.confidence
+                    "confidence": path_1_result.confidence,
+                    "speaker_embedding": path_1_result.speaker_embedding if hasattr(path_1_result, 'speaker_embedding') else (request.speaker_embedding if request.speaker_embedding else [])
                 }
             else:
                 # Fallback if there was an error
                 return {
                     "translated_text": f"[Translated: {request.text}]",
-                    "confidence": 0.5
+                    "confidence": 0.5,
+                    "speaker_embedding": request.speaker_embedding if request.speaker_embedding else []
                 }
                 
         except Exception as e:
             log.error(f"Translation error: {e}")
             raise HTTPException(status_code=500, detail=str(e))
-    
+
     @app.post("/translate/dual")
     async def translate_dual(request: DualTranslationRequest):
-        """Translate two texts concurrently using dual-lane processing"""
+        """Translate two texts concurrently using dual-lane processing with voice cloning support"""
         try:
             results = orchestrator.translate_dual_lane_concurrent(
                 text_A=request.text_A,
@@ -103,7 +110,9 @@ def create_app() -> FastAPI:
                 source_lang_B=request.source_lang_B,
                 target_lang_A=request.target_lang_A,
                 target_lang_B=request.target_lang_B,
-                call_id="dual_translation"
+                call_id="dual_translation",
+                speaker_embedding_A=request.speaker_embedding_A,  # Pass speaker embedding A
+                speaker_embedding_B=request.speaker_embedding_B   # Pass speaker embedding B
             )
             
             # Format the response
@@ -121,7 +130,8 @@ def create_app() -> FastAPI:
                     "translated_text": path_1_result.translated_text,
                     "confidence": path_1_result.confidence,
                     "source_text": path_1_result.source_text,
-                    "processing_time_ms": path_1_result.processing_time_ms
+                    "processing_time_ms": path_1_result.processing_time_ms,
+                    "speaker_embedding": path_1_result.speaker_embedding if hasattr(path_1_result, 'speaker_embedding') else (request.speaker_embedding_A if request.speaker_embedding_A else [])
                 }
             
             # Process path 2 result
@@ -131,11 +141,12 @@ def create_app() -> FastAPI:
                     "translated_text": path_2_result.translated_text,
                     "confidence": path_2_result.confidence,
                     "source_text": path_2_result.source_text,
-                    "processing_time_ms": path_2_result.processing_time_ms
+                    "processing_time_ms": path_2_result.processing_time_ms,
+                    "speaker_embedding": path_2_result.speaker_embedding if hasattr(path_2_result, 'speaker_embedding') else (request.speaker_embedding_B if request.speaker_embedding_B else [])
                 }
             
             return response
-                
+            
         except Exception as e:
             log.error(f"Dual translation error: {e}")
             raise HTTPException(status_code=500, detail=str(e))
