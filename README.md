@@ -206,4 +206,4 @@ cd /home/azureuser/VoiceSync
 
 ## License
 
-This is a demonstration project for educational purposes.
+This is a demonstration project for KT purposes.
