@@ -204,4 +204,178 @@ async def call_mt_service_with_voice_cloning(text, source_lang, target_lang, spe
     except Exception as e:
         logger.error(f"MT service error: {e}")
         # Fallback to dictionary translation
-        return t
+        return translate_text_fallback(text, source_lang, target_lang)
+
+async def call_tts_service_with_voice_cloning(text, language, speaker_embedding=None, session_id=None):
+    """Call the TTS service to synthesize speech with voice cloning"""
+    try:
+        # Prepare payload for TTS service
+        payload = {
+            "session_id": session_id or f"tts_{int(time.time())}",
+            "tts_text": text,
+            "target_language": language,
+            "speaker_id": "voice_cloned_speaker",
+            "speaker_embedding": speaker_embedding if speaker_embedding else []
+        }
+        
+        # Add voice signature if embedding is provided
+        if speaker_embedding and len(speaker_embedding) > 0:
+            payload["voice_signature"] = {
+                "embedding": speaker_embedding,
+                "dimensions": len(speaker_embedding)
+            }
+        
+        logger.info(f"Calling TTS service for language {language} with voice cloning: {bool(speaker_embedding)}")
+        
+        # Make synchronous request in async context
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(None, lambda: requests.post(TTS_ENDPOINT, json=payload, timeout=30))
+        
+        if response.status_code == 200:
+            result = response.json()
+            logger.info(f"TTS service successful for {language}")
+            return result
+        else:
+            logger.error(f"TTS service returned status {response.status_code}: {response.text}")
+            return None
+    except requests.exceptions.RequestException as e:
+        logger.error(f"TTS service network error: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"TTS service error: {e}")
+        return None
+
+async def handle_client(websocket, path):
+    """Handle WebSocket client connections"""
+    client_id = f"client_{int(time.time())}"
+    logger.info(f"New client connected: {client_id}")
+    
+    # Store client info
+    clients[client_id] = {
+        "websocket": websocket,
+        "languages": {"source": "en", "target": "es"},
+        "speaker_embedding": None  # Store speaker embedding for voice cloning
+    }
+    
+    try:
+        # Connect to STT service
+        stt_ws = await websockets.connect(STT_ENDPOINT)
+        logger.info(f"Connected to STT service for client {client_id}")
+        
+        # Send initial configuration to STT
+        config_msg = {
+            "type": "configure",
+            "language": clients[client_id]["languages"]["source"]
+        }
+        await stt_ws.send(json.dumps(config_msg))
+        
+        # Forward messages between client and STT service
+        async def forward_to_stt():
+            async for message in websocket:
+                if isinstance(message, str):
+                    # Handle control messages
+                    try:
+                        data = json.loads(message)
+                        if data.get("type") == "configure":
+                            # Update language configuration
+                            clients[client_id]["languages"]["source"] = data.get("source_lang", "en")
+                            clients[client_id]["languages"]["target"] = data.get("target_lang", "es")
+                            
+                            # Send updated configuration to STT
+                            config_msg = {
+                                "type": "configure",
+                                "language": clients[client_id]["languages"]["source"]
+                            }
+                            await stt_ws.send(json.dumps(config_msg))
+                        elif data.get("type") == "set_speaker_embedding":
+                            # Store speaker embedding for voice cloning
+                            clients[client_id]["speaker_embedding"] = data.get("embedding")
+                            logger.info(f"Stored speaker embedding for client {client_id}")
+                    except json.JSONDecodeError:
+                        pass
+                else:
+                    # Forward audio data to STT
+                    await stt_ws.send(message)
+        
+        async def forward_from_stt():
+            async for message in stt_ws:
+                if isinstance(message, str):
+                    # Handle STT text messages
+                    try:
+                        data = json.loads(message)
+                        if data.get("type") == "transcript":
+                            # Extract transcript and speaker embedding
+                            transcript = data.get("text", "")
+                            speaker_embedding = data.get("speaker_embedding") or clients[client_id].get("speaker_embedding")
+                            
+                            logger.info(f"Transcript received: {transcript}")
+                            
+                            # Translate the text
+                            translated_text = await call_mt_service_with_voice_cloning(
+                                transcript,
+                                clients[client_id]["languages"]["source"],
+                                clients[client_id]["languages"]["target"],
+                                speaker_embedding
+                            )
+                            
+                            logger.info(f"Translated text: {translated_text}")
+                            
+                            # Synthesize speech with voice cloning
+                            tts_result = await call_tts_service_with_voice_cloning(
+                                translated_text,
+                                clients[client_id]["languages"]["target"],
+                                speaker_embedding,
+                                data.get("segment_id")
+                            )
+                            
+                            if tts_result:
+                                # Send translated text and audio back to client
+                                response = {
+                                    "type": "translation_result",
+                                    "original_text": transcript,
+                                    "translated_text": translated_text,
+                                    "audio_bytes": tts_result.get("audio_bytes", ""),
+                                    "sample_rate": tts_result.get("sample_rate", 22050),
+                                    "language": clients[client_id]["languages"]["target"]
+                                }
+                                await websocket.send(json.dumps(response))
+                            else:
+                                # Fallback: send only translated text
+                                response = {
+                                    "type": "translation_result",
+                                    "original_text": transcript,
+                                    "translated_text": translated_text,
+                                    "audio_bytes": "",
+                                    "sample_rate": 22050,
+                                    "language": clients[client_id]["languages"]["target"]
+                                }
+                                await websocket.send(json.dumps(response))
+                        else:
+                            # Forward other STT messages to client
+                            await websocket.send(message)
+                    except json.JSONDecodeError:
+                        await websocket.send(message)
+                else:
+                    # Forward binary data to client
+                    await websocket.send(message)
+        
+        # Run both forwarding tasks concurrently
+        await asyncio.gather(forward_to_stt(), forward_from_stt())
+        
+    except websockets.exceptions.ConnectionClosed:
+        logger.info(f"Client {client_id} disconnected")
+    except Exception as e:
+        logger.error(f"Error handling client {client_id}: {e}")
+    finally:
+        # Clean up
+        if client_id in clients:
+            del clients[client_id]
+        logger.info(f"Client {client_id} connection closed")
+
+# Start the WebSocket server
+start_server = websockets.serve(handle_client, "0.0.0.0", WEBSOCKET_PORT)
+logger.info(f"WebSocket server started on port {WEBSOCKET_PORT}")
+
+# Run the server
+asyncio.get_event_loop().run_until_complete(start_server)
+asyncio.get_event_loop().run_forever()
